@@ -2,7 +2,7 @@
 
 Empowering Nigerian learners through accessible TVET and scholarship opportunities
 
-🌍 Live Site: accessedung.web.app
+🌍 Live Site: https://accessedung.web.app
  • 💻 GitHub Repo: https://github.com/bishopkbb/access_edu_ng.git
 
 🌟 About AccessEdung
@@ -146,4 +146,4 @@ Open a Pull Request 🎉
 
 AccessEdung is built for Nigerian learners, by a passionate team of developers, educators, and contributors.
 
-🔥 Start your learning journey today → Visit Live Site: accessedung.web.app
+🔥 Start your learning journey today → Visit Live Site: https://accessedung.web.app
