@@ -1,0 +1,12 @@
+specVersion: "v1"
+serviceId: "accessedung"
+location: "us-central1"
+schema:
+  source: "./schema"
+  datasource:
+    postgresql:
+      database: "fdcdb"
+      cloudSql:
+        instanceId: "accessedung-fdc"
+      # schemaValidation: "COMPATIBLE"
+connectorDirs: ["./example"]
