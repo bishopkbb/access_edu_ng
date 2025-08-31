@@ -67,3 +67,4 @@ const MyComponent = () => {
 2. Change language using the language selector
 3. Verify translations appear correctly
 4. Check browser console for any API errors
+
