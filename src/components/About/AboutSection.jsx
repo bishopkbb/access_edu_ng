@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { useTranslation } from '../../context/TranslationContext';
+import { Link } from 'react-router-dom';
 import { Card, CardContent } from '../../components/ui/card';
 import { Target, Eye, Heart } from 'lucide-react';
 
@@ -31,6 +32,16 @@ const AboutSection = () => {
       <div className="absolute inset-0 bg-gradient-to-r from-blue-100/20 to-purple-100/20 rounded-3xl"></div>
       
       <div className="relative">
+        {/* Back to Dashboard Button */}
+        <div className="text-left mb-6">
+          <Link
+            to="/dashboard"
+            className="inline-flex items-center bg-gray-800 text-white px-6 py-2 rounded-full font-semibold hover:bg-gray-700 transition-colors"
+          >
+            ← {t("Back to Dashboard")}
+          </Link>
+        </div>
+
         <div className="text-center mb-12">
           <h2 className="text-3xl font-bold text-gray-900 mb-4">
             {t("About AccessEdung")}

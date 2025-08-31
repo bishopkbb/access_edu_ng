@@ -17,7 +17,8 @@ import {
   getTvetPrograms,
   getTvetScholarships,
   saveProgramForUser,
-  removeSavedProgramForUser
+  removeSavedProgramForUser,
+  getUserSavedPrograms
 } from "../services/tvetService";
 
 export default function TVET() {
@@ -42,6 +43,16 @@ export default function TVET() {
         ]);
         setPrograms(p);
         setScholarships(s);
+        
+        // Load user's saved programs if authenticated
+        if (user && !user.isAnonymous) {
+          try {
+            const saved = await getUserSavedPrograms(user.uid);
+            setSavedPrograms(saved.map(p => p.id));
+          } catch (e) {
+            console.error("Error loading saved programs:", e);
+          }
+        }
       } catch (e) {
         setError("Unable to load TVET content. Please try again later.");
       } finally {
@@ -49,7 +60,7 @@ export default function TVET() {
       }
     };
     load();
-  }, []);
+  }, [user]);
 
   const iconsByCategory = {
     Engineering: Wrench,
@@ -257,15 +268,61 @@ export default function TVET() {
         id: 3,
         name: "Hassan, Kano",
         story: "Electrical skills led to a stable job with an EPC contractor.",
+      },
+      {
+        id: 4,
+        name: "Fatima, Lagos",
+        story: "Plumbing certification opened doors to work with major construction companies.",
+      },
+      {
+        id: 5,
+        name: "Emeka, Anambra",
+        story: "Carpentry training helped me start a furniture business that now exports to neighboring states.",
+      },
+      {
+        id: 6,
+        name: "Biodun, Ogun",
+        story: "Auto mechanics skills transformed my life - from apprentice to garage owner with 8 employees.",
+      },
+      {
+        id: 7,
+        name: "Kemi, Rivers",
+        story: "Welding certification led to offshore oil platform work with excellent pay and benefits.",
+      },
+      {
+        id: 8,
+        name: "Abdullahi, Kano",
+        story: "Electrical installation skills helped me secure government contracts for street lighting projects.",
+      },
+      {
+        id: 9,
+        name: "Chioma, Imo",
+        story: "Fashion design training enabled me to create jobs for 15 other women in my community.",
+      },
+      {
+        id: 10,
+        name: "Tunde, Oyo",
+        story: "Masonry skills helped me build a construction company that now handles major projects.",
       }
     ]), []);
     return (
-      <div className="overflow-x-auto no-scrollbar -mx-2 px-2">
-        <div className="flex space-x-4">
-          {stories.map((s) => (
-            <div key={s.id} className="min-w-[260px] bg-gradient-to-br from-purple-50 to-red-50 border border-purple-100 rounded-xl p-4">
+      <div className="space-y-6">
+        {/* First row - 5 stories */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          {stories.slice(0, 5).map((s) => (
+            <div key={s.id} className="bg-gradient-to-br from-purple-50 to-red-50 border border-purple-100 rounded-xl p-4 hover:shadow-md transition-shadow">
               <Sparkles className="w-5 h-5 text-purple-600" />
-              <p className="text-sm text-gray-700 mt-2">“{s.story}”</p>
+              <p className="text-sm text-gray-700 mt-2">"{s.story}"</p>
+              <p className="text-xs text-gray-600 mt-2">— {s.name}</p>
+            </div>
+          ))}
+        </div>
+        {/* Second row - 5 stories */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          {stories.slice(5, 10).map((s) => (
+            <div key={s.id} className="bg-gradient-to-br from-purple-50 to-red-50 border border-purple-100 rounded-xl p-4 hover:shadow-md transition-shadow">
+              <Sparkles className="w-5 h-5 text-purple-600" />
+              <p className="text-sm text-gray-700 mt-2">"{s.story}"</p>
               <p className="text-xs text-gray-600 mt-2">— {s.name}</p>
             </div>
           ))}

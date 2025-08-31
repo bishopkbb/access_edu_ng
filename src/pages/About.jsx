@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { useTranslation } from '../context/TranslationContext';
+import { Link } from 'react-router-dom';
 import AboutSection from '../components/About/AboutSection';
 import SDG4Section from '../components/About/SDG4Section';
 import CreditsSection from '../components/About/CreditsSection';
@@ -40,6 +41,16 @@ const About = () => {
         className="bg-white shadow-sm border-b"
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          {/* Back to Dashboard Button */}
+          <div className="text-left mb-6">
+            <Link
+              to="/dashboard"
+              className="inline-flex items-center bg-gray-800 text-white px-6 py-2 rounded-full font-semibold hover:bg-gray-700 transition-colors"
+            >
+              ← {t("Back to Dashboard")}
+            </Link>
+          </div>
+          
           <div className="text-center">
             <h1 className="text-4xl font-bold text-gray-900 mb-4">
               {t("About AccessEdung")}

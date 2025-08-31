@@ -13,6 +13,7 @@ import {
   subscribeToScholarships,
   subscribeToAnnouncements
 } from "../services/scholarshipService";
+import ApplicationFlow from "../components/scholarship/ApplicationFlow";
 import {
   ArrowLeft,
   Search,
@@ -56,6 +57,12 @@ export default function Scholarships() {
   
   // Notification system
   const [notifications, setNotifications] = useState([]);
+
+  // Application flow state
+  const [showApplicationFlow, setShowApplicationFlow] = useState(false);
+  const [selectedScholarship, setSelectedScholarship] = useState(null);
+  const [showApplicationFlow, setShowApplicationFlow] = useState(false);
+  const [selectedScholarship, setSelectedScholarship] = useState(null);
 
   // Load user data for saved/completed scholarships
   useEffect(() => {
@@ -257,19 +264,6 @@ export default function Scholarships() {
       return;
     }
     
-    // Use the found ID for the rest of the function
-    const scholarshipWithId = { ...scholarship, id: scholarshipId };
-    
-    // Additional validation for required fields
-    const requiredFields = ['title', 'deadline'];
-    const missingFields = requiredFields.filter(field => !scholarship[field]);
-    
-    if (missingFields.length > 0) {
-      console.error("Missing required fields:", missingFields, scholarship);
-      showNotification(`Missing scholarship data: ${missingFields.join(', ')}`, "error");
-      return;
-    }
-
     // Check if user is authenticated
     if (!user || user.isAnonymous) {
       showNotification("Please log in to apply for scholarships", "error");
@@ -291,54 +285,26 @@ export default function Scholarships() {
       return;
     }
     
-    const actionKey = `apply-${scholarshipId}`;
-    if (actionLoadingStates[actionKey]) return; // Prevent double-clicks
-    
-    setActionLoading(actionKey, true);
-    
-    try {
-      // Call the application service with the scholarship that has an ID
-      const result = await completeApplication(user.uid, scholarshipWithId);
-      
-      // Check if the service returned a success indicator
-      if (result && (result.success === false || result.error)) {
-        throw new Error(result.error || 'Application failed');
-      }
-      
-      // Refresh user data to update the UI
-      await loadUserData();
-      
-      showNotification("Application submitted successfully! Check your email for confirmation.", "success");
-      
-      // Optional: Log successful application for analytics
-      console.log('Application successful:', {
-        userId: user.uid,
-        scholarshipId: scholarshipId,
-        scholarshipTitle: scholarship.title,
-        timestamp: new Date().toISOString()
-      });
-      
-    } catch (error) {
-      console.error("Error completing application:", error);
-      
-      // Provide specific error messages based on error type
-      let errorMessage = "Failed to submit application. Please try again.";
-      
-      if (error.message?.includes('network') || error.message?.includes('fetch')) {
-        errorMessage = "Network error. Please check your connection and try again.";
-      } else if (error.message?.includes('unauthorized')) {
-        errorMessage = "Session expired. Please log in again.";
-        navigate("/login");
-      } else if (error.message?.includes('quota') || error.message?.includes('limit')) {
-        errorMessage = "Application limit reached. Please contact support.";
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
-      
-      showNotification(errorMessage, "error");
-    } finally {
-      setActionLoading(actionKey, false);
-    }
+    // Open application flow
+    setSelectedScholarship(scholarship);
+    setShowApplicationFlow(true);
+  };
+
+  // Handle application flow close
+  const handleApplicationClose = () => {
+    setShowApplicationFlow(false);
+    setSelectedScholarship(null);
+  };
+
+  // Handle application success
+  const handleApplicationSuccess = async (result) => {
+    showNotification("Application submitted successfully! Check your email for confirmation.", "success");
+    await loadUserData(); // Refresh user data
+    handleApplicationClose();
+  };
+    showNotification("Application submitted successfully! Check your email for confirmation.", "success");
+    await loadUserData(); // Refresh user data
+    handleApplicationClose();
   };
 
   // Calculate days left until deadline
@@ -657,6 +623,15 @@ export default function Scholarships() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Application Flow Modal */}
+      {showApplicationFlow && selectedScholarship && (
+        <ApplicationFlow
+          scholarship={selectedScholarship}
+          onClose={handleApplicationClose}
+          onSuccess={handleApplicationSuccess}
+        />
+      )}
+
       {/* Notification Toasts */}
       {notifications.map(notification => (
         <NotificationToast key={notification.id} notification={notification} />
