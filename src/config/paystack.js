@@ -3,8 +3,8 @@
  * Centralized configuration for Paystack integration
  */
 
-// Paystack public key - should be set in environment variables
-export const PAYSTACK_PUBLIC_KEY = process.env.REACT_APP_PAYSTACK_PUBLIC_KEY || 'pk_test_your_public_key_here';
+// Paystack public key - Vite environment variables use import.meta.env
+export const PAYSTACK_PUBLIC_KEY = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY || 'pk_test_your_public_key_here';
 
 // Paystack configuration
 export const PAYSTACK_CONFIG = {
@@ -52,7 +52,7 @@ export const initializePaystackPayment = (config) => {
  */
 export const validatePaystackConfig = () => {
   if (!PAYSTACK_PUBLIC_KEY || PAYSTACK_PUBLIC_KEY === 'pk_test_your_public_key_here') {
-    console.warn('Paystack public key not configured. Please set REACT_APP_PAYSTACK_PUBLIC_KEY in your environment variables.');
+    console.warn('Paystack public key not configured. Please set VITE_PAYSTACK_PUBLIC_KEY in your environment variables.');
     return false;
   }
   return true;
@@ -63,4 +63,33 @@ export const validatePaystackConfig = () => {
  */
 export const getPaystackScriptUrl = () => {
   return 'https://js.paystack.co/v1/inline.js';
+};
+
+/**
+ * Utility function to format amount for Paystack (convert to kobo)
+ * @param {number} amount - Amount in Naira
+ * @returns {number} Amount in kobo
+ */
+export const formatAmountForPaystack = (amount) => {
+  return Math.round(amount * 100);
+};
+
+/**
+ * Utility function to validate Paystack response
+ * @param {Object} response - Paystack response object
+ * @returns {boolean} Whether the response is valid
+ */
+export const validatePaystackResponse = (response) => {
+  return response && response.status === 'success' && response.reference;
+};
+
+/**
+ * Generate unique payment reference
+ * @param {string} prefix - Optional prefix for reference
+ * @returns {string} Unique reference
+ */
+export const generatePaymentReference = (prefix = 'pay') => {
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).substring(2, 8);
+  return `${prefix}_${timestamp}_${random}`;
 };

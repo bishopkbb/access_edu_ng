@@ -61,8 +61,6 @@ export default function Scholarships() {
   // Application flow state
   const [showApplicationFlow, setShowApplicationFlow] = useState(false);
   const [selectedScholarship, setSelectedScholarship] = useState(null);
-  const [showApplicationFlow, setShowApplicationFlow] = useState(false);
-  const [selectedScholarship, setSelectedScholarship] = useState(null);
 
   // Load user data for saved/completed scholarships
   useEffect(() => {
@@ -298,10 +296,6 @@ export default function Scholarships() {
 
   // Handle application success
   const handleApplicationSuccess = async (result) => {
-    showNotification("Application submitted successfully! Check your email for confirmation.", "success");
-    await loadUserData(); // Refresh user data
-    handleApplicationClose();
-  };
     showNotification("Application submitted successfully! Check your email for confirmation.", "success");
     await loadUserData(); // Refresh user data
     handleApplicationClose();
