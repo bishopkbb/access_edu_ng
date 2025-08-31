@@ -11,7 +11,7 @@ import { SubscriptionProvider } from "./context/SubscriptionContext";
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <AuthProvider>
-      <BrowserRouter>
+      <BrowserRouter basename="/access_edu_ng">
         <TranslationProvider>
           <SubscriptionProvider>
             <App />
