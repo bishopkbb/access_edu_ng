@@ -10,7 +10,8 @@ import {
   ArrowRight,
   CheckCircle2,
   Users,
-  Rocket
+  Rocket,
+  XCircle
 } from "lucide-react";
 import {
   getTvetPrograms,
@@ -27,6 +28,8 @@ export default function TVET() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [savedPrograms, setSavedPrograms] = useState([]);
+  const [successMessage, setSuccessMessage] = useState("");
 
   useEffect(() => {
     const load = async () => {
@@ -88,6 +91,34 @@ export default function TVET() {
     </section>
   );
 
+  const messageSection = (
+    <>
+      {/* Success Message */}
+      {successMessage && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+            <div className="flex items-center">
+              <CheckCircle2 className="w-5 h-5 text-green-500 mr-2" />
+              <p className="text-green-800">{successMessage}</p>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Error Message */}
+      {error && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+            <div className="flex items-center">
+              <XCircle className="w-5 h-5 text-red-500 mr-2" />
+              <p className="text-red-800">{error}</p>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+
   const about = (
     <section className="bg-white">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
@@ -132,7 +163,20 @@ export default function TVET() {
       }
       setSaving(true);
       try {
-        await saveProgramForUser(user.uid, program);
+        const result = await saveProgramForUser(user.uid, program);
+        if (result.success) {
+          setError("");
+          setSavedPrograms(prev => [...prev, program.id]);
+          setSuccessMessage(`${program.title} saved successfully!`);
+          setTimeout(() => {
+            setSuccessMessage("");
+          }, 3000);
+        } else {
+          setError(`Failed to save program: ${result.error}`);
+        }
+      } catch (error) {
+        console.error("Error saving program:", error);
+        setError("Failed to save program. Please try again.");
       } finally {
         setSaving(false);
       }
@@ -151,10 +195,25 @@ export default function TVET() {
         <div className="flex items-center justify-between">
           <button
             onClick={onSave}
-            disabled={saving}
-            className="px-3 py-2 text-sm bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50"
+            disabled={saving || savedPrograms.includes(program.id)}
+            className={`px-3 py-2 text-sm rounded-lg transition-colors ${
+              savedPrograms.includes(program.id)
+                ? 'bg-green-500 text-white cursor-not-allowed'
+                : saving
+                ? 'bg-gray-400 text-white cursor-not-allowed'
+                : 'bg-red-500 text-white hover:bg-red-600'
+            }`}
           >
-            Save Program
+            {savedPrograms.includes(program.id) ? (
+              <>
+                <CheckCircle2 className="w-4 h-4 inline mr-1" />
+                Saved
+              </>
+            ) : saving ? (
+              'Saving...'
+            ) : (
+              'Save Program'
+            )}
           </button>
           <button
             onClick={() => navigate("/scholarships")}
@@ -218,6 +277,7 @@ export default function TVET() {
   return (
     <div className="min-h-screen bg-gray-50">
       {hero}
+      {messageSection}
       {about}
 
       <section id="tvet-programs" className="bg-white">

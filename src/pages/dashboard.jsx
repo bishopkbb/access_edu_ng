@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { 
@@ -49,11 +49,15 @@ export default function Dashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [showLanguageSelector, setShowLanguageSelector] = useState(false);
+  
+  // ✅ Enhanced state with better error handling
+  const [error, setError] = useState(null);
   const [userDashboardData, setUserDashboardData] = useState({
     totalScholarships: 0,
     savedOpportunities: 0,
     savedScholarships: [],
     completedApplications: [],
+    savedPrograms: [],
     profileCompleted: false,
     quizProgress: {
       totalQuizzes: 0,
@@ -65,28 +69,121 @@ export default function Dashboard() {
   });
   const [actualScholarshipCount, setActualScholarshipCount] = useState(0);
 
+  // ✅ Create a stable navigation handler using useCallback
+  const handleSidebarNavigation = useCallback((itemKey) => {
+    console.log("Navigating to:", itemKey);
+    
+    switch(itemKey) {
+      case "home":
+        // Already on dashboard/home, do nothing or scroll to top
+        break;
+      case "scholarships":
+        navigate("/scholarships");
+        break;
+      case "tvet":
+        navigate("/tvet");
+        break;
+      case "forum":
+        navigate("/forum");
+        break;
+      case "quizzes":
+        navigate("/quiz");
+        break;
+      case "language":
+        setShowLanguageSelector(true);
+        break;
+      case "settings":
+        navigate("/settings");
+        break;
+      default:
+        console.warn("Unknown navigation key:", itemKey);
+    }
+    
+    // Close sidebar on mobile after navigation
+    setSidebarOpen(false);
+  }, [navigate]);
+
+  // ✅ Create sidebarItems with stable references using useMemo
+  const sidebarItems = useMemo(() => [
+    { icon: Home, label: t("Home"), active: true, key: "home" },
+    { icon: BookOpen, label: t("Scholarships"), active: false, key: "scholarships" },
+    { icon: GraduationCap, label: t("TVET"), active: false, key: "tvet" },
+    { icon: MessageSquare, label: t("Community Forum"), active: false, key: "forum" },
+    { icon: HelpCircle, label: t("Quizzes"), active: false, key: "quizzes" },
+    { icon: Globe, label: t("Language"), active: false, key: "language" },
+    { icon: Settings, label: t("Settings"), active: false, key: "settings" },
+  ], [t]);
+
+  // ✅ Enhanced data loading with better error handling and logging
+  const loadUserData = useCallback(async () => {
+    if (!user || user.isAnonymous) {
+      console.log("User is anonymous or not logged in, skipping data load");
+      return;
+    }
+
+    try {
+      setRefreshing(true);
+      setError(null);
+      
+      console.log("Loading user dashboard data for user:", user.uid);
+      
+      // Load dashboard data with detailed logging
+      const dashboardData = await getUserDashboardData(user.uid);
+      console.log("Raw dashboard data received:", dashboardData);
+      
+      // Ensure data structure is correct
+      const processedData = {
+        totalScholarships: dashboardData.totalScholarships || 0,
+        savedOpportunities: dashboardData.savedOpportunities || 0,
+        savedScholarships: Array.isArray(dashboardData.savedScholarships) ? dashboardData.savedScholarships : [],
+        completedApplications: Array.isArray(dashboardData.completedApplications) ? dashboardData.completedApplications : [],
+        savedPrograms: Array.isArray(dashboardData.savedPrograms) ? dashboardData.savedPrograms : [],
+        profileCompleted: Boolean(dashboardData.profileCompleted),
+        quizProgress: {
+          totalQuizzes: dashboardData.quizProgress?.totalQuizzes || 0,
+          completedQuizzes: dashboardData.quizProgress?.completedQuizzes || 0,
+          averageScore: dashboardData.quizProgress?.averageScore || 0,
+          totalQuestions: dashboardData.quizProgress?.totalQuestions || 0,
+          correctAnswers: dashboardData.quizProgress?.correctAnswers || 0
+        }
+      };
+      
+      console.log("Processed dashboard data:", processedData);
+      setUserDashboardData(processedData);
+      
+    } catch (error) {
+      console.error("Error loading user dashboard data:", error);
+      setError(error.message);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [user]);
+
   // Load user data when component mounts or user changes
   useEffect(() => {
-    const loadUserData = async () => {
+    const loadInitialData = async () => {
       try {
         setLoading(true);
+        setError(null);
+        
+        // Load scholarship count
         const scholarships = await getActiveScholarships();
         console.log("Loaded scholarships:", scholarships.length);
         setActualScholarshipCount(scholarships.length);
         
-        if (user && !user.isAnonymous) {
-          const dashboardData = await getUserDashboardData(user.uid);
-          setUserDashboardData(dashboardData);
-        }
+        // Load user-specific data if not anonymous
+        await loadUserData();
+        
       } catch (error) {
-        console.error("Error loading user data:", error);
+        console.error("Error loading initial data:", error);
+        setError(error.message);
       } finally {
         setLoading(false);
       }
     };
 
-    loadUserData();
-  }, [user, refreshTrigger]);
+    loadInitialData();
+  }, [user, refreshTrigger, loadUserData]);
 
   // Check for refresh state from navigation and localStorage
   useEffect(() => {
@@ -98,27 +195,13 @@ export default function Dashboard() {
       navigate(location.pathname, { replace: true, state: {} });
       localStorage.removeItem('quizCompleted');
     }
-  }, [location.state, user]);
-
-  const loadUserData = async () => {
-    if (user && !user.isAnonymous) {
-      try {
-        setRefreshing(true);
-        const dashboardData = await getUserDashboardData(user.uid);
-        setUserDashboardData(dashboardData);
-        console.log("Dashboard data refreshed:", dashboardData);
-        console.log("Quiz progress data:", dashboardData.quizProgress);
-      } catch (error) {
-        console.error("Error refreshing user data:", error);
-      } finally {
-        setRefreshing(false);
-      }
-    }
-  };
+  }, [location.state, user, navigate]);
 
   // Sample data (static - shared across all users)
   const scholarshipData = useMemo(() => {
     console.log("Scholarship data memo - actualScholarshipCount:", actualScholarshipCount);
+    console.log("Current user dashboard data:", userDashboardData);
+    
     return {
       total: actualScholarshipCount || 24,
       saved: userDashboardData.savedOpportunities,
@@ -165,16 +248,6 @@ export default function Dashboard() {
       category: "Corporate",
       saved: false
     }
-  ];
-
-  const sidebarItems = [
-    { icon: Home, label: t("Home"), active: true },
-    { icon: BookOpen, label: t("Scholarships"), active: false },
-    { icon: GraduationCap, label: t("TVET"), active: false },
-    { icon: MessageSquare, label: t("Community Forum"), active: false },
-    { icon: HelpCircle, label: t("Quizzes"), active: false },
-    { icon: Globe, label: t("Language"), active: false },
-    { icon: Settings, label: t("Settings"), active: false },
   ];
 
   const StatCard = ({ title, value, icon: Icon, bgColor = "bg-white", textColor = "text-gray-800", onClick }) => (
@@ -224,35 +297,62 @@ export default function Dashboard() {
     </div>
   );
 
+  // ✅ Enhanced ScholarshipCard with better error handling and state management
   const ScholarshipCard = ({ scholarship }) => {
+    const [actionLoading, setActionLoading] = useState(false);
     const daysLeft = Math.ceil((new Date(scholarship.deadline) - new Date()) / (1000 * 60 * 60 * 24));
     const isSaved = userDashboardData.savedScholarships.some(s => s.id === scholarship.id);
     const isCompleted = userDashboardData.completedApplications.some(a => a.id === scholarship.id);
     
     const handleSaveToggle = async () => {
-      if (!user || user.isAnonymous) return;
+      if (!user || user.isAnonymous || actionLoading) return;
       
       try {
+        setActionLoading(true);
+        console.log(`${isSaved ? 'Unsaving' : 'Saving'} scholarship:`, scholarship.id);
+        
+        let result;
         if (isSaved) {
-          await unsaveScholarship(user.uid, scholarship.id);
+          result = await unsaveScholarship(user.uid, scholarship.id);
         } else {
-          await saveScholarship(user.uid, scholarship);
+          result = await saveScholarship(user.uid, scholarship);
         }
-        const updatedData = await getUserDashboardData(user.uid);
-        setUserDashboardData(updatedData);
+        
+        console.log("Save/unsave result:", result);
+        
+        // ✅ Force refresh of dashboard data
+        await loadUserData();
+        
+        console.log("Updated dashboard data after save/unsave");
+        
       } catch (error) {
         console.error("Error toggling save:", error);
+        setError(`Failed to ${isSaved ? 'unsave' : 'save'} scholarship: ${error.message}`);
+      } finally {
+        setActionLoading(false);
       }
     };
 
     const handleApply = async () => {
-      if (!user || user.isAnonymous) return;
+      if (!user || user.isAnonymous || actionLoading || isCompleted) return;
+      
       try {
-        await completeApplication(user.uid, scholarship);
-        const updatedData = await getUserDashboardData(user.uid);
-        setUserDashboardData(updatedData);
+        setActionLoading(true);
+        console.log("Applying to scholarship:", scholarship.id);
+        
+        const result = await completeApplication(user.uid, scholarship);
+        console.log("Application result:", result);
+        
+        // ✅ Force refresh of dashboard data
+        await loadUserData();
+        
+        console.log("Updated dashboard data after application");
+        
       } catch (error) {
         console.error("Error completing application:", error);
+        setError(`Failed to complete application: ${error.message}`);
+      } finally {
+        setActionLoading(false);
       }
     };
     
@@ -273,9 +373,12 @@ export default function Dashboard() {
           {!user?.isAnonymous && (
             <button 
               onClick={handleSaveToggle}
-              className={`p-2 rounded-full transition-colors ${isSaved ? 'text-red-500 bg-red-50' : 'text-gray-400 hover:text-red-500 hover:bg-red-50'}`}
+              disabled={actionLoading}
+              className={`p-2 rounded-full transition-colors ${
+                actionLoading ? 'opacity-50 cursor-not-allowed' : ''
+              } ${isSaved ? 'text-red-500 bg-red-50' : 'text-gray-400 hover:text-red-500 hover:bg-red-50'}`}
             >
-              <Bookmark className={`w-5 h-5 ${isSaved ? 'fill-current' : ''}`} />
+              <Bookmark className={`w-5 h-5 ${isSaved ? 'fill-current' : ''} ${actionLoading ? 'animate-pulse' : ''}`} />
             </button>
           )}
         </div>
@@ -289,22 +392,47 @@ export default function Dashboard() {
           </span>
           <button 
             onClick={handleApply}
-            disabled={isCompleted}
+            disabled={isCompleted || actionLoading}
             className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
               isCompleted 
                 ? 'bg-green-500 text-white cursor-not-allowed' 
+                : actionLoading
+                ? 'bg-gray-400 text-white cursor-not-allowed'
                 : 'bg-red-500 text-white hover:bg-red-600'
             }`}
           >
-            {isCompleted ? 'Applied' : 'Apply Now'}
+            {actionLoading ? 'Processing...' : isCompleted ? 'Applied' : 'Apply Now'}
           </button>
         </div>
       </div>
     );
   };
 
+  // ✅ Enhanced manual refresh function
+  const handleManualRefresh = useCallback(async () => {
+    console.log("Manual refresh triggered");
+    await loadUserData();
+  }, [loadUserData]);
+
+  // ✅ Debug effect to monitor user data changes
+  useEffect(() => {
+    console.log("User dashboard data updated:", userDashboardData);
+  }, [userDashboardData]);
+
   return (
     <div className={`min-h-screen ${darkMode ? 'dark bg-gray-900' : 'bg-gray-50'}`}>
+      {/* ✅ Error Banner */}
+      {error && (
+        <div className="fixed top-0 left-0 right-0 z-[70] bg-red-500 text-white p-3 text-center">
+          <div className="flex items-center justify-between max-w-7xl mx-auto">
+            <span>{error}</span>
+            <button onClick={() => setError(null)} className="text-white hover:text-gray-200">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Mobile Sidebar Overlay */}
       {sidebarOpen && (
         <div className="fixed inset-0 z-40 bg-black bg-opacity-50 lg:hidden" onClick={() => setSidebarOpen(false)} />
@@ -319,24 +447,10 @@ export default function Dashboard() {
           </div>
           
           <nav className="space-y-2">
-            {sidebarItems.map((item, index) => (
+            {sidebarItems.map((item) => (
               <button
-                key={index}
-                onClick={() => {
-                  if (item.label === "Quizzes") {
-                    navigate("/quiz");
-                  } else if (item.label === "Scholarships") {
-                    navigate("/scholarships");
-                  } else if (item.label === "TVET") {
-                    navigate("/tvet");
-                  } else if (item.label === "Community Forum") {
-                    navigate("/forum");
-                  } else if (item.label === "Language") {
-                    setShowLanguageSelector(true); // ✅ open language modal
-                  } else if (item.label === "Settings") {
-                    navigate("/settings");
-                  }
-                }}
+                key={item.key} // ✅ Use stable key instead of index
+                onClick={() => handleSidebarNavigation(item.key)} // ✅ Use stable handler with key
                 className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors w-full text-left ${
                   item.active ? 'bg-red-500 text-white' : 'text-slate-300 hover:bg-slate-700 hover:text-white'
                 }`}
@@ -360,7 +474,6 @@ export default function Dashboard() {
             <span>{user?.isAnonymous ? "Exit Guest Mode" : "Logout"}</span>
           </button>
           
-          {/* ✅ Footer links now navigate */}
           <div className="mt-4 pt-4 border-t border-slate-700 text-xs text-slate-400">
             <div className="flex space-x-4">
               <Link to="/about" className="hover:text-white">About</Link>
@@ -374,7 +487,7 @@ export default function Dashboard() {
       {/* Main Content */}
       <div className="lg:ml-64">
         {/* Header */}
-        <header className="bg-white shadow-sm border-b border-gray-200 px-6 py-4">
+        <header className={`bg-white shadow-sm border-b border-gray-200 px-6 py-4 ${error ? 'mt-12' : ''}`}>
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
               <button
@@ -412,7 +525,7 @@ export default function Dashboard() {
 
               {/* Refresh Button */}
               <button 
-                onClick={loadUserData}
+                onClick={handleManualRefresh}
                 disabled={refreshing}
                 className={`p-2 text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-100 ${
                   refreshing ? 'opacity-50 cursor-not-allowed' : ''
@@ -486,6 +599,8 @@ export default function Dashboard() {
             </div>
           ) : (
             <>
+
+
               {/* Stats Cards */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                 <StatCard
@@ -533,8 +648,8 @@ export default function Dashboard() {
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-2">
                     <div 
-                      className="bg-blue-500 h-2 rounded-full" 
-                      style={{ width: `${Math.min((userDashboardData.savedOpportunities / scholarshipData.total) * 100, 100)}%` }}
+                      className="bg-blue-500 h-2 rounded-full transition-all duration-300" 
+                      style={{ width: `${Math.min((userDashboardData.savedOpportunities / Math.max(scholarshipData.total, 1)) * 100, 100)}%` }}
                     ></div>
                   </div>
                 </div>
@@ -549,10 +664,32 @@ export default function Dashboard() {
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-2">
                     <div 
-                      className="bg-green-500 h-2 rounded-full" 
-                      style={{ width: `${Math.min(((Array.isArray(userDashboardData.completedApplications) ? userDashboardData.completedApplications.length : 0) / scholarshipData.total) * 100, 100)}%` }}
+                      className="bg-green-500 h-2 rounded-full transition-all duration-300" 
+                      style={{ width: `${Math.min(((Array.isArray(userDashboardData.completedApplications) ? userDashboardData.completedApplications.length : 0) / Math.max(scholarshipData.total, 1)) * 100, 100)}%` }}
                     ></div>
                   </div>
+                </div>
+                
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                  <h3 className="text-lg font-semibold text-gray-800 mb-4">Saved TVET Programs</h3>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-gray-600">Programs Saved</span>
+                    <span className="text-sm font-semibold text-gray-800">
+                      {Array.isArray(userDashboardData.savedPrograms) ? userDashboardData.savedPrograms.length : 0}
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div 
+                      className="bg-red-500 h-2 rounded-full transition-all duration-300" 
+                      style={{ width: `${Math.min((Array.isArray(userDashboardData.savedPrograms) ? userDashboardData.savedPrograms.length : 0) * 10, 100)}%` }}
+                    ></div>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    {Array.isArray(userDashboardData.savedPrograms) && userDashboardData.savedPrograms.length === 0 
+                      ? 'No TVET programs saved yet' 
+                      : `${userDashboardData.savedPrograms.length} program${userDashboardData.savedPrograms.length === 1 ? '' : 's'} saved`
+                    }
+                  </p>
                 </div>
                 
                 {!user?.isAnonymous && (
@@ -566,7 +703,7 @@ export default function Dashboard() {
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-2">
                       <div 
-                        className="bg-purple-500 h-2 rounded-full" 
+                        className="bg-purple-500 h-2 rounded-full transition-all duration-300" 
                         style={{ width: `${userDashboardData.profileCompleted ? 100 : 0}%` }}
                       ></div>
                     </div>
@@ -586,7 +723,7 @@ export default function Dashboard() {
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-2">
                     <div 
-                      className="bg-purple-500 h-2 rounded-full" 
+                      className="bg-purple-500 h-2 rounded-full transition-all duration-300" 
                       style={{ width: `${Math.min((userDashboardData.quizProgress.completedQuizzes / Math.max(userDashboardData.quizProgress.totalQuizzes, 1)) * 100, 100)}%` }}
                     ></div>
                   </div>

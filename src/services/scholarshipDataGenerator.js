@@ -74,6 +74,7 @@ const generateSingleScholarship = (index, currentDate) => {
   const deadline = new Date(currentDate.getTime() + (daysFromNow * 24 * 60 * 60 * 1000));
   
   const scholarship = {
+    id: `mock-scholarship-${index + 1}`,
     title: generateScholarshipTitle(type.name, provider, field),
     description: generateDescription(type.name, provider, field, amount),
     category: type.categories[0],

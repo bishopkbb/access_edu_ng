@@ -105,6 +105,7 @@ export const getUserDashboardData = async (userId) => {
         completedApplications: userData.dashboard?.applicationsCompleted || 0,
         savedScholarships: userData.dashboard?.savedScholarships || [],
         completedApplications: userData.dashboard?.completedApplications || [],
+        savedPrograms: userData.savedPrograms || [],
         profileCompleted: userData.profile?.completed || false,
         quizProgress: userData.quizProgress
       };
@@ -116,6 +117,7 @@ export const getUserDashboardData = async (userId) => {
       completedApplications: 0,
       savedScholarships: [],
       completedApplications: [],
+      savedPrograms: [],
       profileCompleted: false,
       quizProgress: {
         totalQuizzes: 0,
