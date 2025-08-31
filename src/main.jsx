@@ -6,13 +6,16 @@ import App from "./App";
 import "./index.css";
 import { AuthProvider } from "./context/AuthContext";
 import { TranslationProvider } from "./context/TranslationContext";
+import { SubscriptionProvider } from "./context/SubscriptionContext";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <AuthProvider>
       <BrowserRouter>
         <TranslationProvider>
-          <App />
+          <SubscriptionProvider>
+            <App />
+          </SubscriptionProvider>
         </TranslationProvider>
       </BrowserRouter>
     </AuthProvider>

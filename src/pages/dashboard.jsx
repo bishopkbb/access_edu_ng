@@ -9,6 +9,7 @@ import {
   getUserPreferences,
   updateUserPreferences 
 } from "../services/userDataService";
+import { getNotifications } from "../services/profileService";
 import { getActiveScholarships } from "../services/scholarshipService";
 import LanguageSelector from "../components/LanguageSelector";
 import { useTranslation } from "../context/TranslationContext";
@@ -68,6 +69,7 @@ export default function Dashboard() {
     }
   });
   const [actualScholarshipCount, setActualScholarshipCount] = useState(0);
+  const [notificationCount, setNotificationCount] = useState(0);
 
   // ✅ Create a stable navigation handler using useCallback
   const handleSidebarNavigation = useCallback((itemKey) => {
@@ -127,14 +129,23 @@ export default function Dashboard() {
       
       console.log("Loading user dashboard data for user:", user.uid);
       
-      // Load dashboard data with detailed logging
-      const dashboardData = await getUserDashboardData(user.uid);
+      // Load dashboard data and notifications with detailed logging
+      const [dashboardData, notifications] = await Promise.all([
+        getUserDashboardData(user.uid),
+        getNotifications(user.uid)
+      ]);
       console.log("Raw dashboard data received:", dashboardData);
+      console.log("Notifications received:", notifications);
+      
+      // Calculate total saved opportunities (scholarships + programs)
+      const savedScholarshipsCount = Array.isArray(dashboardData.savedScholarships) ? dashboardData.savedScholarships.length : 0;
+      const savedProgramsCount = Array.isArray(dashboardData.savedPrograms) ? dashboardData.savedPrograms.length : 0;
+      const totalSavedOpportunities = savedScholarshipsCount + savedProgramsCount;
       
       // Ensure data structure is correct
       const processedData = {
         totalScholarships: dashboardData.totalScholarships || 0,
-        savedOpportunities: dashboardData.savedOpportunities || 0,
+        savedOpportunities: totalSavedOpportunities,
         savedScholarships: Array.isArray(dashboardData.savedScholarships) ? dashboardData.savedScholarships : [],
         completedApplications: Array.isArray(dashboardData.completedApplications) ? dashboardData.completedApplications : [],
         savedPrograms: Array.isArray(dashboardData.savedPrograms) ? dashboardData.savedPrograms : [],
@@ -150,6 +161,10 @@ export default function Dashboard() {
       
       console.log("Processed dashboard data:", processedData);
       setUserDashboardData(processedData);
+      
+      // Set notification count
+      const unreadCount = notifications.filter(n => !n.read).length;
+      setNotificationCount(unreadCount);
       
     } catch (error) {
       console.error("Error loading user dashboard data:", error);
@@ -442,8 +457,13 @@ export default function Dashboard() {
       <div className={`fixed left-0 top-0 h-full w-64 bg-slate-800 text-white z-50 transform transition-transform lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="p-6">
           <div className="flex items-center space-x-3 mb-8">
-            <BookOpen className="w-8 h-8 text-red-500" />
-            <h1 className="text-xl font-bold">AccessEdu NG</h1>
+            <button 
+              onClick={() => navigate('/dashboard')}
+              className="flex items-center space-x-3 hover:opacity-80 transition-opacity"
+            >
+              <BookOpen className="w-8 h-8 text-red-500" />
+              <h1 className="text-xl font-bold">AccessEdu NG</h1>
+            </button>
           </div>
           
           <nav className="space-y-2">
@@ -496,7 +516,13 @@ export default function Dashboard() {
               >
                 <Menu className="w-6 h-6" />
               </button>
-              <h2 className="text-2xl font-bold text-gray-800">Dashboard</h2>
+              <button 
+                onClick={() => navigate('/dashboard')}
+                className="flex items-center space-x-3 hover:opacity-80 transition-opacity"
+              >
+                <BookOpen className="w-6 h-6 text-red-500" />
+                <h2 className="text-2xl font-bold text-gray-800">AccessEdu NG</h2>
+              </button>
             </div>
 
             <div className="flex items-center space-x-4">
@@ -537,12 +563,16 @@ export default function Dashboard() {
 
               {/* Notifications */}
               <button 
-                onClick={() => navigate('/settings')}
+                onClick={() => navigate('/notifications')}
                 className="relative p-2 text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-100"
-                title="Go to Settings"
+                title="View Notifications"
               >
                 <Bell className="w-5 h-5" />
-                <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full"></span>
+                {notificationCount > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                    {notificationCount > 9 ? '9+' : notificationCount}
+                  </span>
+                )}
               </button>
 
               {/* Profile */}

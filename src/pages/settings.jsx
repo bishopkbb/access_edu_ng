@@ -16,7 +16,8 @@ import {
   Globe,
   Shield,
   LogOut,
-  ArrowLeft
+  ArrowLeft,
+  CheckCircle
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -31,6 +32,7 @@ const Settings = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
+  const [message, setMessage] = useState({ type: '', text: '' });
 
   // Profile state
   const [profile, setProfile] = useState({
@@ -115,10 +117,12 @@ const Settings = () => {
   const handleProfileUpdate = async () => {
     try {
       setSaving(true);
+      setMessage({ type: '', text: '' });
       await upsertUserProfile(user.uid, profile);
-      // Show success message
+      setMessage({ type: 'success', text: 'Profile updated successfully!' });
     } catch (error) {
       console.error('Error updating profile:', error);
+      setMessage({ type: 'error', text: 'Failed to update profile. Please try again.' });
     } finally {
       setSaving(false);
     }
@@ -129,10 +133,26 @@ const Settings = () => {
     if (file) {
       try {
         setSaving(true);
+        setMessage({ type: '', text: '' });
+        
+        // Validate file size (max 5MB)
+        if (file.size > 5 * 1024 * 1024) {
+          setMessage({ type: 'error', text: 'File size must be less than 5MB.' });
+          return;
+        }
+        
+        // Validate file type
+        if (!file.type.startsWith('image/')) {
+          setMessage({ type: 'error', text: 'Please select a valid image file.' });
+          return;
+        }
+        
         const url = await uploadAvatar(user.uid, file);
         setProfile(prev => ({ ...prev, photoURL: url }));
+        setMessage({ type: 'success', text: 'Profile picture updated successfully!' });
       } catch (error) {
         console.error('Error uploading avatar:', error);
+        setMessage({ type: 'error', text: 'Failed to upload profile picture. Please try again.' });
       } finally {
         setSaving(false);
       }
@@ -311,6 +331,17 @@ const Settings = () => {
                 <div className="p-6">
                   <h2 className="text-xl font-semibold mb-6">Profile Information</h2>
                   
+                  {/* Message Display */}
+                  {message.text && (
+                    <div className={`mb-4 p-3 rounded-lg ${
+                      message.type === 'success' 
+                        ? 'bg-green-50 border border-green-200 text-green-800' 
+                        : 'bg-red-50 border border-red-200 text-red-800'
+                    }`}>
+                      {message.text}
+                    </div>
+                  )}
+                  
                   {/* Avatar Section */}
                   <div className="mb-6">
                     <div className="flex items-center space-x-4">
@@ -320,13 +351,20 @@ const Settings = () => {
                           alt="Profile"
                           className="w-20 h-20 rounded-full object-cover border-2 border-gray-200"
                         />
-                        <label className="absolute bottom-0 right-0 bg-red-500 text-white p-1 rounded-full cursor-pointer hover:bg-red-600">
-                          <Camera className="w-4 h-4" />
+                        <label className={`absolute bottom-0 right-0 p-1 rounded-full cursor-pointer transition-colors ${
+                          saving ? 'bg-gray-400 cursor-not-allowed' : 'bg-red-500 hover:bg-red-600'
+                        }`}>
+                          {saving ? (
+                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          ) : (
+                            <Camera className="w-4 h-4 text-white" />
+                          )}
                           <input
                             type="file"
                             accept="image/*"
                             onChange={handleAvatarUpload}
                             className="hidden"
+                            disabled={saving}
                           />
                         </label>
                       </div>
@@ -396,15 +434,26 @@ const Settings = () => {
                     </div>
                   </div>
 
-                  <div className="mt-6">
+                  <div className="mt-6 flex items-center space-x-4">
                     <button
                       onClick={handleProfileUpdate}
                       disabled={saving}
-                      className="flex items-center space-x-2 px-6 py-3 bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50"
+                      className="flex items-center space-x-2 px-6 py-3 bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50 transition-colors"
                     >
-                      <Save className="w-5 h-5" />
+                      {saving ? (
+                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      ) : (
+                        <Save className="w-5 h-5" />
+                      )}
                       <span>{saving ? 'Saving...' : 'Save Changes'}</span>
                     </button>
+                    
+                    {message.type === 'success' && (
+                      <div className="flex items-center space-x-2 text-green-600">
+                        <CheckCircle className="w-5 h-5" />
+                        <span className="text-sm">Changes saved successfully!</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

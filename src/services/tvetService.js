@@ -133,8 +133,10 @@ export async function getTvetScholarships() {
 export async function saveProgramForUser(userId, program) {
   try {
     const userRef = doc(db, USERS_COLLECTION, userId);
-    const existing = await getDoc(userRef);
-    if (!existing.exists()) {
+    const userDoc = await getDoc(userRef);
+    
+    if (!userDoc.exists()) {
+      // Create new user document with saved program
       await setDoc(userRef, {
         savedPrograms: [
           {
@@ -143,18 +145,37 @@ export async function saveProgramForUser(userId, program) {
             category: program.category || "",
             savedAt: serverTimestamp()
           }
-        ]
-      }, { merge: true });
+        ],
+        dashboard: {
+          savedOpportunities: 1
+        }
+      });
       return { success: true };
     }
+    
+    const userData = userDoc.data();
+    const savedPrograms = userData.savedPrograms || [];
+    
+    // Check if already saved
+    const alreadySaved = savedPrograms.find(p => p.id === program.id);
+    if (alreadySaved) {
+      return { success: false, error: "Program already saved" };
+    }
+    
+    // Add to saved programs
+    const updatedSavedPrograms = [...savedPrograms, {
+      id: program.id,
+      title: program.title,
+      category: program.category || "",
+      savedAt: serverTimestamp()
+    }];
+    
+    // Update user document with new saved programs and increment saved opportunities
     await updateDoc(userRef, {
-      savedPrograms: arrayUnion({
-        id: program.id,
-        title: program.title,
-        category: program.category || "",
-        savedAt: serverTimestamp()
-      })
+      savedPrograms: updatedSavedPrograms,
+      "dashboard.savedOpportunities": (userData.dashboard?.savedOpportunities || 0) + 1
     });
+    
     return { success: true };
   } catch (e) {
     console.error("Error saving program:", e);
@@ -165,17 +186,46 @@ export async function saveProgramForUser(userId, program) {
 export async function removeSavedProgramForUser(userId, program) {
   try {
     const userRef = doc(db, USERS_COLLECTION, userId);
+    const userDoc = await getDoc(userRef);
+    
+    if (!userDoc.exists()) {
+      return { success: false, error: "User not found" };
+    }
+    
+    const userData = userDoc.data();
+    const savedPrograms = userData.savedPrograms || [];
+    
+    // Remove the program
+    const updatedSavedPrograms = savedPrograms.filter(p => p.id !== program.id);
+    
+    // Update user document
     await updateDoc(userRef, {
-      savedPrograms: arrayRemove({
-        id: program.id,
-        title: program.title,
-        category: program.category || "",
-      })
+      savedPrograms: updatedSavedPrograms,
+      "dashboard.savedOpportunities": Math.max((userData.dashboard?.savedOpportunities || 0) - 1, 0)
     });
+    
     return { success: true };
   } catch (e) {
     console.error("Error removing saved program:", e);
     return { success: false, error: e.message };
+  }
+}
+
+// Get user's saved programs
+export async function getUserSavedPrograms(userId) {
+  try {
+    const userRef = doc(db, USERS_COLLECTION, userId);
+    const userDoc = await getDoc(userRef);
+    
+    if (userDoc.exists()) {
+      const userData = userDoc.data();
+      return userData.savedPrograms || [];
+    }
+    
+    return [];
+  } catch (e) {
+    console.error("Error getting user saved programs:", e);
+    return [];
   }
 }
 

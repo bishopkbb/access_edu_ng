@@ -13,6 +13,9 @@ import Settings from "./pages/settings";
 import About from "./pages/About";
 import SDG4Section from "./components/About/SDG4Section";
 import CreditSection from "./components/About/CreditsSection";
+import SubscriptionPage from "./pages/subscription";
+import SubscriptionManagementPage from "./pages/subscriptionManagement";
+import Notifications from "./pages/notifications";
 
 function App() {
   const ProtectedRoute = ({ children }) => {
@@ -68,6 +71,30 @@ function App() {
         element={
           <ProtectedRoute>
             <Settings />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/subscription"
+        element={
+          <ProtectedRoute>
+            <SubscriptionPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/subscription/management"
+        element={
+          <ProtectedRoute>
+            <SubscriptionManagementPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/notifications"
+        element={
+          <ProtectedRoute>
+            <Notifications />
           </ProtectedRoute>
         }
       />
