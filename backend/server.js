@@ -39,7 +39,8 @@ const rateLimiterMiddleware = async (req, res, next) => {
   }
 };
 
-app.use(rateLimiterMiddleware);
+app.use('/access_edu_ng/api/subscription', require('./routes/subscriptionRoute'));
+
 
 // Scholarship sources configuration
 const SCHOLARSHIP_SOURCES = [

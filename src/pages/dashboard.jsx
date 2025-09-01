@@ -41,13 +41,14 @@ import {
   CreditCard
 } from "lucide-react";
 
-// Subscription service functions with enhanced error handling
+// Subscription service functions with enhanced error handling and correct base URL
 const subscriptionService = {
   async initializePayment(email, amount, plan) {
     try {
       console.log('Initializing payment with data:', { email, amount, plan });
       
-      const response = await fetch('/api/subscription/initialize', {
+      // Fixed: Add the correct base URL /access_edu_ng/
+      const response = await fetch('/access_edu_ng/api/subscription/initialize', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -110,7 +111,8 @@ const subscriptionService = {
     try {
       console.log('Verifying payment with reference:', reference);
       
-      const response = await fetch(`/api/subscription/verify/${reference}`, {
+      // Fixed: Add the correct base URL /access_edu_ng/
+      const response = await fetch(`/access_edu_ng/api/subscription/verify/${reference}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -154,7 +156,8 @@ const subscriptionService = {
     try {
       console.log('Getting subscription status for user:', userId);
       
-      const response = await fetch(`/api/subscription/status/${userId}`, {
+      // Fixed: Add the correct base URL /access_edu_ng/
+      const response = await fetch(`/access_edu_ng/api/subscription/status/${userId}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -726,14 +729,14 @@ export default function Dashboard() {
                 <span className="text-yellow-800 font-medium text-sm">Development Mode</span>
               </div>
               <p className="text-yellow-700 text-sm mt-2">
-                Make sure your backend server is running on the expected port with the subscription endpoints configured.
+                Make sure your backend server is running with the subscription endpoints configured at the correct base path.
               </p>
               <details className="mt-2 text-xs text-yellow-600">
                 <summary className="cursor-pointer hover:text-yellow-800">View Required Endpoints</summary>
                 <div className="mt-2 bg-yellow-100 p-2 rounded font-mono">
-                  <div>POST /api/subscription/initialize</div>
-                  <div>GET /api/subscription/verify/:reference</div>
-                  <div>GET /api/subscription/status/:userId</div>
+                  <div>POST /access_edu_ng/api/subscription/initialize</div>
+                  <div>GET /access_edu_ng/api/subscription/verify/:reference</div>
+                  <div>GET /access_edu_ng/api/subscription/status/:userId</div>
                 </div>
               </details>
             </div>

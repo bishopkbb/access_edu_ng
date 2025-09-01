@@ -1,374 +1,281 @@
+
+
+// ============= FILE: server.js =============
 const express = require('express');
-const SubscriptionService = require('../services/subscriptionService');
-const SubscriptionDatabaseService = require('../services/subscriptionDatabaseService');
+const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+require('dotenv').config();
+
+// Import routes
+const subscriptionRoutes = require('./routes/subscriptionRoutes');
+const authRoutes = require('./routes/authRoutes');
+
+// Import middleware
+const errorHandler = require('./middleware/errorHandler');
+const logger = require('./middleware/logger');
+
+const app = express();
+
+// Security middleware
+app.use(helmet());
+
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  message: 'Too many requests from this IP, please try again later.'
+});
+app.use(limiter);
+
+// CORS configuration
+const corsOptions = {
+  origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'],
+  credentials: true,
+  optionsSuccessStatus: 200
+};
+app.use(cors(corsOptions));
+
+// Body parsing middleware
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Custom middleware
+app.use(logger);
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'OK',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
+});
+
+// API Routes
+app.use('/api/auth', authRoutes);
+
+// Dashboard-compatible subscription endpoints
+app.use('/api/subscriptions', subscriptionRoutes);
+
+// Custom subscription endpoints (backward compatibility)
+app.use('/access_edu_ng/api/subscription', subscriptionRoutes);
+
+// 404 handler
+app.use('*', (req, res) => {
+  res.status(404).json({
+    success: false,
+    error: 'Route not found'
+  });
+});
+
+// Error handling middleware
+app.use(errorHandler);
+
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`📊 Dashboard endpoints: http://localhost:${PORT}/api/subscriptions`);
+  console.log(`🔧 Custom endpoints: http://localhost:${PORT}/access_edu_ng/api/subscription`);
+  console.log(`💚 Health check: http://localhost:${PORT}/health`);
+});
+
+module.exports = app;
+
+// ============= FILE: config/database.js =============
+const mysql = require('mysql2/promise');
+
+class Database {
+  constructor() {
+    this.pool = mysql.createPool({
+      host: process.env.DB_HOST || 'localhost',
+      port: process.env.DB_PORT || 3306,
+      user: process.env.DB_USER,
+      password: process.env.DB_PASSWORD,
+      database: process.env.DB_NAME,
+      waitForConnections: true,
+      connectionLimit: 10,
+      queueLimit: 0,
+      acquireTimeout: 60000,
+      timeout: 60000
+    });
+  }
+
+  async query(sql, params = []) {
+    try {
+      const [results] = await this.pool.execute(sql, params);
+      return results;
+    } catch (error) {
+      console.error('Database query error:', error);
+      throw error;
+    }
+  }
+
+  async getConnection() {
+    return await this.pool.getConnection();
+  }
+
+  async close() {
+    await this.pool.end();
+  }
+}
+
+module.exports = new Database();
+
+// ============= FILE: middleware/errorHandler.js =============
+const errorHandler = (err, req, res, next) => {
+  console.error('Error Stack:', err.stack);
+
+  // Default error
+  let error = { ...err };
+  error.message = err.message;
+
+  // MySQL errors
+  if (err.code === 'ER_DUP_ENTRY') {
+    const message = 'Duplicate field value entered';
+    error = { message, statusCode: 400 };
+  }
+
+  // MySQL connection errors
+  if (err.code === 'ECONNREFUSED') {
+    const message = 'Database connection failed';
+    error = { message, statusCode: 500 };
+  }
+
+  // JWT errors
+  if (err.name === 'JsonWebTokenError') {
+    const message = 'Invalid token';
+    error = { message, statusCode: 401 };
+  }
+
+  if (err.name === 'TokenExpiredError') {
+    const message = 'Token expired';
+    error = { message, statusCode: 401 };
+  }
+
+  res.status(error.statusCode || 500).json({
+    success: false,
+    error: error.message || 'Server Error'
+  });
+};
+
+module.exports = errorHandler;
+
+// ============= FILE: middleware/logger.js =============
+const logger = (req, res, next) => {
+  const timestamp = new Date().toISOString();
+  const method = req.method;
+  const url = req.url;
+  const ip = req.ip || req.connection.remoteAddress;
+
+  console.log(`[${timestamp}] ${method} ${url} - ${ip}`);
+
+  // Log response time
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    console.log(`[${timestamp}] ${method} ${url} - ${res.statusCode} - ${duration}ms`);
+  });
+
+  next();
+};
+
+module.exports = logger;
+
+// ============= FILE: middleware/auth.js =============
+const jwt = require('jsonwebtoken');
+
+const authenticate = (req, res, next) => {
+  try {
+    const token = req.header('Authorization')?.replace('Bearer ', '');
+
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        error: 'Access denied. No token provided.'
+      });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      error: 'Invalid token.'
+    });
+  }
+};
+
+module.exports = { authenticate };
+
+// ============= FILE: routes/authRoutes.js =============
+const express = require('express');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const Database = require('../config/database');
 
 const router = express.Router();
-const subscriptionService = new SubscriptionService();
-const dbService = new SubscriptionDatabaseService();
 
 /**
- * Initialize a new subscription
- * POST /api/subscriptions/initialize
+ * Register a new user
+ * POST /api/auth/register
  */
-router.post('/initialize', async (req, res) => {
+router.post('/register', async (req, res) => {
   try {
-    const { email, planCode, userId, metadata = {} } = req.body;
+    const { email, password, firstName, lastName } = req.body;
 
-    // Validate required fields
-    if (!email || !planCode || !userId) {
+    if (!email || !password || !firstName || !lastName) {
       return res.status(400).json({
         success: false,
-        error: 'Email, planCode, and userId are required'
+        error: 'All fields are required'
       });
     }
 
-    // Get plan details from database
-    const planResult = await dbService.getActivePlans();
-    if (!planResult.success) {
-      return res.status(500).json({
-        success: false,
-        error: 'Failed to fetch subscription plans'
-      });
-    }
-
-    const plan = planResult.data.find(p => p.planCode === planCode);
-    if (!plan) {
-      return res.status(404).json({
-        success: false,
-        error: 'Subscription plan not found'
-      });
-    }
-
-    // Initialize subscription with Paystack
-    const initResult = await subscriptionService.initializeSubscription({
-      email,
-      planCode,
-      amount: plan.amount,
-      metadata: {
-        ...metadata,
-        userId,
-        planName: plan.name
-      }
-    });
-
-    if (!initResult.success) {
-      return res.status(400).json(initResult);
-    }
-
-    res.json({
-      success: true,
-      data: {
-        authorization_url: initResult.data.authorization_url,
-        access_code: initResult.data.access_code,
-        reference: initResult.data.reference,
-        plan: {
-          code: plan.planCode,
-          name: plan.name,
-          amount: plan.amount,
-          interval: plan.interval
-        }
-      }
-    });
-
-  } catch (error) {
-    console.error('Error initializing subscription:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Internal server error'
-    });
-  }
-});
-
-/**
- * Verify a subscription transaction
- * POST /api/subscriptions/verify
- */
-router.post('/verify', async (req, res) => {
-  try {
-    const { reference } = req.body;
-
-    if (!reference) {
-      return res.status(400).json({
-        success: false,
-        error: 'Transaction reference is required'
-      });
-    }
-
-    // Verify transaction with Paystack
-    const verifyResult = await subscriptionService.verifyTransaction(reference);
-    
-    if (!verifyResult.success) {
-      return res.status(400).json(verifyResult);
-    }
-
-    const transaction = verifyResult.data;
-
-    // If transaction is successful, save subscription to database
-    if (transaction.status === 'success') {
-      const subscriptionData = {
-        userId: transaction.metadata?.userId,
-        email: transaction.customer.email,
-        subscriptionCode: transaction.subscription?.subscription_code,
-        customerCode: transaction.customer.customer_code,
-        planCode: transaction.plan?.plan_code,
-        planName: transaction.metadata?.planName,
-        amount: transaction.amount,
-        currency: transaction.currency,
-        status: 'active',
-        startDate: transaction.paid_at,
-        nextPaymentDate: transaction.subscription?.next_payment_date,
-        metadata: transaction.metadata
-      };
-
-      // Save subscription to database
-      const saveResult = await dbService.createOrUpdateSubscription(subscriptionData);
-      
-      if (!saveResult.success) {
-        console.error('Failed to save subscription:', saveResult.error);
-      }
-
-      // Log transaction
-      await dbService.logTransaction({
-        reference: transaction.reference,
-        subscriptionCode: transaction.subscription?.subscription_code,
-        userId: transaction.metadata?.userId,
-        amount: transaction.amount,
-        currency: transaction.currency,
-        status: transaction.status,
-        channel: transaction.channel,
-        gatewayResponse: transaction.gateway_response,
-        paidAt: transaction.paid_at,
-        metadata: transaction.metadata
-      });
-    }
-
-    res.json({
-      success: true,
-      data: {
-        status: transaction.status,
-        reference: transaction.reference,
-        amount: transaction.amount,
-        currency: transaction.currency,
-        subscription: transaction.subscription,
-        customer: transaction.customer,
-        paid_at: transaction.paid_at
-      }
-    });
-
-  } catch (error) {
-    console.error('Error verifying subscription:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Internal server error'
-    });
-  }
-});
-
-/**
- * Get user subscriptions
- * GET /api/subscriptions/user/:userId
- */
-router.get('/user/:userId', async (req, res) => {
-  try {
-    const { userId } = req.params;
-
-    if (!userId) {
-      return res.status(400).json({
-        success: false,
-        error: 'User ID is required'
-      });
-    }
-
-    const result = await dbService.getUserSubscriptions(userId);
-    
-    if (!result.success) {
-      return res.status(500).json(result);
-    }
-
-    res.json({
-      success: true,
-      data: result.data
-    });
-
-  } catch (error) {
-    console.error('Error fetching user subscriptions:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Internal server error'
-    });
-  }
-});
-
-/**
- * Get subscription details
- * GET /api/subscriptions/:subscriptionCode
- */
-router.get('/:subscriptionCode', async (req, res) => {
-  try {
-    const { subscriptionCode } = req.params;
-
-    if (!subscriptionCode) {
-      return res.status(400).json({
-        success: false,
-        error: 'Subscription code is required'
-      });
-    }
-
-    // Get subscription from database
-    const dbResult = await dbService.getSubscription(subscriptionCode);
-    
-    if (!dbResult.success) {
-      return res.status(404).json(dbResult);
-    }
-
-    // Get latest subscription details from Paystack
-    const paystackResult = await subscriptionService.getSubscription(subscriptionCode);
-    
-    let combinedData = dbResult.data;
-    
-    if (paystackResult.success) {
-      // Merge database data with Paystack data
-      combinedData = {
-        ...dbResult.data,
-        paystackData: paystackResult.data,
-        lastSyncedAt: new Date().toISOString()
-      };
-
-      // Update database if status has changed
-      if (paystackResult.data.status !== dbResult.data.status) {
-        await dbService.updateSubscriptionStatus(
-          subscriptionCode,
-          paystackResult.data.status,
-          {
-            nextPaymentDate: paystackResult.data.next_payment_date
-          }
-        );
-      }
-    }
-
-    res.json({
-      success: true,
-      data: combinedData
-    });
-
-  } catch (error) {
-    console.error('Error fetching subscription details:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Internal server error'
-    });
-  }
-});
-
-/**
- * Cancel a subscription
- * POST /api/subscriptions/:subscriptionCode/cancel
- */
-router.post('/:subscriptionCode/cancel', async (req, res) => {
-  try {
-    const { subscriptionCode } = req.params;
-    const { token } = req.body;
-
-    if (!subscriptionCode) {
-      return res.status(400).json({
-        success: false,
-        error: 'Subscription code is required'
-      });
-    }
-
-    if (!token) {
-      return res.status(400).json({
-        success: false,
-        error: 'Email token is required for cancellation'
-      });
-    }
-
-    // Cancel subscription with Paystack
-    const cancelResult = await subscriptionService.cancelSubscription(subscriptionCode, token);
-    
-    if (!cancelResult.success) {
-      return res.status(400).json(cancelResult);
-    }
-
-    // Update subscription status in database
-    const updateResult = await dbService.updateSubscriptionStatus(
-      subscriptionCode,
-      'cancelled',
-      {
-        cancelledAt: new Date().toISOString()
-      }
+    // Check if user already exists
+    const existingUser = await Database.query(
+      'SELECT id FROM users WHERE email = ?',
+      [email]
     );
 
-    if (!updateResult.success) {
-      console.error('Failed to update subscription status:', updateResult.error);
-    }
-
-    res.json({
-      success: true,
-      message: 'Subscription cancelled successfully',
-      data: cancelResult.data
-    });
-
-  } catch (error) {
-    console.error('Error cancelling subscription:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Internal server error'
-    });
-  }
-});
-
-/**
- * Reactivate a subscription
- * POST /api/subscriptions/:subscriptionCode/reactivate
- */
-router.post('/:subscriptionCode/reactivate', async (req, res) => {
-  try {
-    const { subscriptionCode } = req.params;
-    const { token } = req.body;
-
-    if (!subscriptionCode) {
+    if (existingUser.length > 0) {
       return res.status(400).json({
         success: false,
-        error: 'Subscription code is required'
+        error: 'User already exists'
       });
     }
 
-    if (!token) {
-      return res.status(400).json({
-        success: false,
-        error: 'Email token is required for reactivation'
-      });
-    }
+    // Hash password
+    const saltRounds = 12;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
 
-    // Enable subscription with Paystack
-    const enableResult = await subscriptionService.enableSubscription(subscriptionCode, token);
-    
-    if (!enableResult.success) {
-      return res.status(400).json(enableResult);
-    }
-
-    // Update subscription status in database
-    const updateResult = await dbService.updateSubscriptionStatus(
-      subscriptionCode,
-      'active',
-      {
-        reactivatedAt: new Date().toISOString()
-      }
+    // Create user
+    const result = await Database.query(
+      `INSERT INTO users (email, password, firstName, lastName, createdAt, updatedAt) 
+       VALUES (?, ?, ?, ?, NOW(), NOW())`,
+      [email, hashedPassword, firstName, lastName]
     );
 
-    if (!updateResult.success) {
-      console.error('Failed to update subscription status:', updateResult.error);
-    }
+    // Generate JWT
+    const token = jwt.sign(
+      { userId: result.insertId, email },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN }
+    );
 
-    res.json({
+    res.status(201).json({
       success: true,
-      message: 'Subscription reactivated successfully',
-      data: enableResult.data
+      data: {
+        userId: result.insertId,
+        email,
+        firstName,
+        lastName,
+        token
+      }
     });
-
   } catch (error) {
-    console.error('Error reactivating subscription:', error);
+    console.error('Registration error:', error);
     res.status(500).json({
       success: false,
       error: 'Internal server error'
@@ -377,187 +284,64 @@ router.post('/:subscriptionCode/reactivate', async (req, res) => {
 });
 
 /**
- * Get subscription transactions
- * GET /api/subscriptions/:subscriptionCode/transactions
+ * Login user
+ * POST /api/auth/login
  */
-router.get('/:subscriptionCode/transactions', async (req, res) => {
+router.post('/login', async (req, res) => {
   try {
-    const { subscriptionCode } = req.params;
-    const { limit = 50 } = req.query;
+    const { email, password } = req.body;
 
-    if (!subscriptionCode) {
+    if (!email || !password) {
       return res.status(400).json({
         success: false,
-        error: 'Subscription code is required'
+        error: 'Email and password are required'
       });
     }
 
-    const result = await dbService.getSubscriptionTransactions(subscriptionCode, parseInt(limit));
-    
-    if (!result.success) {
-      return res.status(500).json(result);
-    }
+    // Find user
+    const users = await Database.query(
+      'SELECT * FROM users WHERE email = ?',
+      [email]
+    );
 
-    res.json({
-      success: true,
-      data: result.data
-    });
-
-  } catch (error) {
-    console.error('Error fetching subscription transactions:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Internal server error'
-    });
-  }
-});
-
-/**
- * Get all subscription plans
- * GET /api/subscriptions/plans/all
- */
-router.get('/plans/all', async (req, res) => {
-  try {
-    const result = await dbService.getActivePlans();
-    
-    if (!result.success) {
-      return res.status(500).json(result);
-    }
-
-    res.json({
-      success: true,
-      data: result.data
-    });
-
-  } catch (error) {
-    console.error('Error fetching subscription plans:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Internal server error'
-    });
-  }
-});
-
-/**
- * Create a new subscription plan
- * POST /api/subscriptions/plans
- */
-router.post('/plans', async (req, res) => {
-  try {
-    const { name, amount, interval, description, features = [] } = req.body;
-
-    // Validate required fields
-    if (!name || !amount || !interval || !description) {
-      return res.status(400).json({
+    if (users.length === 0) {
+      return res.status(401).json({
         success: false,
-        error: 'Name, amount, interval, and description are required'
+        error: 'Invalid credentials'
       });
     }
 
-    // Create plan with Paystack
-    const paystackResult = await subscriptionService.createPlan({
-      name,
-      amount,
-      interval,
-      description
-    });
+    const user = users[0];
 
-    if (!paystackResult.success) {
-      return res.status(400).json(paystackResult);
+    // Check password
+    const isValidPassword = await bcrypt.compare(password, user.password);
+
+    if (!isValidPassword) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid credentials'
+      });
     }
 
-    // Save plan to database
-    const dbResult = await dbService.createOrUpdatePlan({
-      planCode: paystackResult.data.plan_code,
-      name,
-      description,
-      amount,
-      currency: 'NGN',
-      interval,
-      features,
-      isActive: true
-    });
-
-    if (!dbResult.success) {
-      console.error('Failed to save plan to database:', dbResult.error);
-    }
+    // Generate JWT
+    const token = jwt.sign(
+      { userId: user.id, email: user.email },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN }
+    );
 
     res.json({
       success: true,
       data: {
-        planCode: paystackResult.data.plan_code,
-        name,
-        description,
-        amount,
-        interval,
-        features,
-        paystackData: paystackResult.data
+        userId: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        token
       }
     });
-
   } catch (error) {
-    console.error('Error creating subscription plan:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Internal server error'
-    });
-  }
-});
-
-/**
- * Get subscription analytics
- * GET /api/subscriptions/analytics/overview
- */
-router.get('/analytics/overview', async (req, res) => {
-  try {
-    const { startDate, endDate, planCode } = req.query;
-
-    const filters = {};
-    if (startDate) filters.startDate = startDate;
-    if (endDate) filters.endDate = endDate;
-    if (planCode) filters.planCode = planCode;
-
-    const result = await dbService.getSubscriptionAnalytics(filters);
-    
-    if (!result.success) {
-      return res.status(500).json(result);
-    }
-
-    res.json({
-      success: true,
-      data: result.data
-    });
-
-  } catch (error) {
-    console.error('Error fetching subscription analytics:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Internal server error'
-    });
-  }
-});
-
-/**
- * Get subscriptions expiring soon
- * GET /api/subscriptions/analytics/expiring
- */
-router.get('/analytics/expiring', async (req, res) => {
-  try {
-    const { days = 7 } = req.query;
-
-    const result = await dbService.getExpiringSubscriptions(parseInt(days));
-    
-    if (!result.success) {
-      return res.status(500).json(result);
-    }
-
-    res.json({
-      success: true,
-      data: result.data
-    });
-
-  } catch (error) {
-    console.error('Error fetching expiring subscriptions:', error);
+    console.error('Login error:', error);
     res.status(500).json({
       success: false,
       error: 'Internal server error'
@@ -566,3 +350,324 @@ router.get('/analytics/expiring', async (req, res) => {
 });
 
 module.exports = router;
+
+// ============= FILE: services/SubscriptionService.js =============
+const axios = require('axios');
+
+class SubscriptionService {
+  constructor() {
+    this.paystackSecretKey = process.env.PAYSTACK_SECRET_KEY;
+    this.paystackBaseUrl = 'https://api.paystack.co';
+    
+    this.headers = {
+      'Authorization': `Bearer ${this.paystackSecretKey}`,
+      'Content-Type': 'application/json'
+    };
+  }
+
+  /**
+   * Initialize a subscription with Paystack
+   */
+  async initializeSubscription({ email, planCode, amount, metadata = {} }) {
+    try {
+      const response = await axios.post(
+        `${this.paystackBaseUrl}/transaction/initialize`,
+        {
+          email,
+          amount: amount * 100, // Paystack expects amount in kobo
+          plan: planCode,
+          metadata,
+          callback_url: metadata.callback_url || process.env.CALLBACK_URL
+        },
+        { headers: this.headers }
+      );
+
+      if (!response.data.status) {
+        return {
+          success: false,
+          error: response.data.message || 'Failed to initialize subscription'
+        };
+      }
+
+      return {
+        success: true,
+        data: response.data.data
+      };
+    } catch (error) {
+      console.error('Paystack initialization error:', error.response?.data || error.message);
+      return {
+        success: false,
+        error: error.response?.data?.message || 'Failed to initialize subscription'
+      };
+    }
+  }
+
+  /**
+   * Verify a transaction
+   */
+  async verifyTransaction(reference) {
+    try {
+      const response = await axios.get(
+        `${this.paystackBaseUrl}/transaction/verify/${reference}`,
+        { headers: this.headers }
+      );
+
+      if (!response.data.status) {
+        return {
+          success: false,
+          error: response.data.message || 'Failed to verify transaction'
+        };
+      }
+
+      return {
+        success: true,
+        data: response.data.data
+      };
+    } catch (error) {
+      console.error('Transaction verification error:', error.response?.data || error.message);
+      return {
+        success: false,
+        error: error.response?.data?.message || 'Failed to verify transaction'
+      };
+    }
+  }
+
+  /**
+   * Cancel a subscription
+   */
+  async cancelSubscription(subscriptionCode) {
+    try {
+      const response = await axios.post(
+        `${this.paystackBaseUrl}/subscription/disable`,
+        {
+          code: subscriptionCode,
+          token: subscriptionCode
+        },
+        { headers: this.headers }
+      );
+
+      if (!response.data.status) {
+        return {
+          success: false,
+          error: response.data.message || 'Failed to cancel subscription'
+        };
+      }
+
+      return {
+        success: true,
+        data: response.data.data
+      };
+    } catch (error) {
+      console.error('Subscription cancellation error:', error.response?.data || error.message);
+      return {
+        success: false,
+        error: error.response?.data?.message || 'Failed to cancel subscription'
+      };
+    }
+  }
+
+  /**
+   * Get subscription details
+   */
+  async getSubscription(subscriptionCode) {
+    try {
+      const response = await axios.get(
+        `${this.paystackBaseUrl}/subscription/${subscriptionCode}`,
+        { headers: this.headers }
+      );
+
+      if (!response.data.status) {
+        return {
+          success: false,
+          error: response.data.message || 'Failed to get subscription'
+        };
+      }
+
+      return {
+        success: true,
+        data: response.data.data
+      };
+    } catch (error) {
+      console.error('Get subscription error:', error.response?.data || error.message);
+      return {
+        success: false,
+        error: error.response?.data?.message || 'Failed to get subscription'
+      };
+    }
+  }
+}
+
+module.exports = SubscriptionService;
+
+// ============= FILE: services/SubscriptionDatabaseService.js =============
+const Database = require('../config/database');
+
+class SubscriptionDatabaseService {
+  /**
+   * Create or update a subscription
+   */
+  async createOrUpdateSubscription(subscriptionData) {
+    try {
+      const {
+        userId, email, subscriptionCode, customerCode, planCode,
+        planName, amount, currency, status, startDate, nextPaymentDate, metadata
+      } = subscriptionData;
+
+      // Check if subscription exists
+      const existingSubscription = await Database.query(
+        'SELECT id FROM subscriptions WHERE subscriptionCode = ?',
+        [subscriptionCode]
+      );
+
+      let result;
+      if (existingSubscription.length > 0) {
+        // Update existing subscription
+        result = await Database.query(
+          `UPDATE subscriptions SET 
+           status = ?, nextPaymentDate = ?, metadata = ?, updatedAt = NOW()
+           WHERE subscriptionCode = ?`,
+          [status, nextPaymentDate, JSON.stringify(metadata), subscriptionCode]
+        );
+      } else {
+        // Create new subscription
+        result = await Database.query(
+          `INSERT INTO subscriptions 
+           (userId, email, subscriptionCode, customerCode, planCode, planName, 
+            amount, currency, status, startDate, nextPaymentDate, metadata, createdAt, updatedAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+          [userId, email, subscriptionCode, customerCode, planCode, planName,
+           amount, currency, status, startDate, nextPaymentDate, JSON.stringify(metadata)]
+        );
+      }
+
+      return {
+        success: true,
+        data: { id: result.insertId || existingSubscription[0].id }
+      };
+    } catch (error) {
+      console.error('Database error creating/updating subscription:', error);
+      return {
+        success: false,
+        error: 'Failed to save subscription'
+      };
+    }
+  }
+
+  /**
+   * Get user subscriptions
+   */
+  async getUserSubscriptions(userId) {
+    try {
+      const subscriptions = await Database.query(
+        `SELECT s.*, p.name as planName, p.interval, p.features
+         FROM subscriptions s
+         LEFT JOIN subscription_plans p ON s.planCode = p.planCode
+         WHERE s.userId = ?
+         ORDER BY s.createdAt DESC`,
+        [userId]
+      );
+
+      return {
+        success: true,
+        data: subscriptions.map(sub => ({
+          ...sub,
+          metadata: sub.metadata ? JSON.parse(sub.metadata) : {}
+        }))
+      };
+    } catch (error) {
+      console.error('Database error fetching user subscriptions:', error);
+      return {
+        success: false,
+        error: 'Failed to fetch subscriptions'
+      };
+    }
+  }
+
+  /**
+   * Get active subscription plans
+   */
+  async getActivePlans() {
+    try {
+      const plans = await Database.query(
+        `SELECT * FROM subscription_plans 
+         WHERE isActive = true 
+         ORDER BY amount ASC`
+      );
+
+      return {
+        success: true,
+        data: plans.map(plan => ({
+          ...plan,
+          features: plan.features ? JSON.parse(plan.features) : []
+        }))
+      };
+    } catch (error) {
+      console.error('Database error fetching plans:', error);
+      return {
+        success: false,
+        error: 'Failed to fetch subscription plans'
+      };
+    }
+  }
+
+  /**
+   * Update subscription status
+   */
+  async updateSubscriptionStatus(subscriptionCode, status) {
+    try {
+      const result = await Database.query(
+        'UPDATE subscriptions SET status = ?, updatedAt = NOW() WHERE subscriptionCode = ?',
+        [status, subscriptionCode]
+      );
+
+      if (result.affectedRows === 0) {
+        return {
+          success: false,
+          error: 'Subscription not found'
+        };
+      }
+
+      return {
+        success: true,
+        data: { subscriptionCode, status }
+      };
+    } catch (error) {
+      console.error('Database error updating subscription status:', error);
+      return {
+        success: false,
+        error: 'Failed to update subscription status'
+      };
+    }
+  }
+
+  /**
+   * Log transaction
+   */
+  async logTransaction(transactionData) {
+    try {
+      const {
+        reference, subscriptionCode, userId, amount, currency,
+        status, channel, gatewayResponse, paidAt, metadata
+      } = transactionData;
+
+      await Database.query(
+        `INSERT INTO transactions 
+         (reference, subscriptionCode, userId, amount, currency, status, 
+          channel, gatewayResponse, paidAt, metadata, createdAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+        [reference, subscriptionCode, userId, amount, currency, status,
+         channel, gatewayResponse, paidAt, JSON.stringify(metadata)]
+      );
+
+      return { success: true };
+    } catch (error) {
+      console.error('Database error logging transaction:', error);
+      return {
+        success: false,
+        error: 'Failed to log transaction'
+      };
+    }
+  }
+}
+
+module.exports = SubscriptionDatabaseService;
